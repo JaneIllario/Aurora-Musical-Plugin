@@ -35,6 +35,12 @@ extern "C" {
 }
 #endif
 
+int hue = 0;
+
+FrameSlice_t* frameSlices = NULL;
+int nFrameSlices = 0;
+int transTime = 15;
+
 /**
  * @description: Initialize the plugin. Called once, when the plugin is loaded.
  * This function can be used to enable rhythm or advanced features,
@@ -44,7 +50,34 @@ extern "C" {
  *
  */
 void initPlugin(){
+    //do allocation here
+    
+    //grab the layout data, this function returns a pointer to a statically allocated buffer. Safe to call as many time as required.
+    //Dont delete this pointer. The memory is managed automatically.
+    LayoutData* layoutData = getLayoutData();
+    
+    rotateAuroraPanels(layoutData, &layoutData->globalOrientation);
+    
+    //quantizes the layout into framelices. See SDK documentation for more information
+    getFrameSlicesFromLayoutForTriangle(layoutData, &frameSlices, &nFrameSlices, layoutData->globalOrientation);
+}
 
+/**
+ * A helper function thats fills up the frame array at frameIndex with a specified framelices
+ * and a specified hue. the color is the specified hue at 100% saturation and brightness.
+ * Note that the FrameSlice_t structure is just a vector of panels at that frame slice
+ */
+void fillUpFramesArray(FrameSlice_t* frameSlice, Frame_t* frame, int* frameIndex, int hue){
+    static RGB_t rgb;
+    for (unsigned int i = 0; i < frameSlice->panelIds.size(); i++){
+        frame[*frameIndex].panelId = frameSlice->panelIds[i];
+        HSVtoRGB((HSV_t){hue, 100, 100}, &rgb);
+        frame[*frameIndex].r = rgb.R;
+        frame[*frameIndex].g = rgb.G;
+        frame[*frameIndex].b = rgb.B;
+        frame[*frameIndex].transTime = transTime;
+        (*frameIndex)++;
+    }
 }
 
 /**
@@ -63,8 +96,29 @@ void initPlugin(){
  * @param sleepTime: specify interval after which this function is called again, NULL if sound visualization plugin
  */
 void getPluginFrame(Frame_t* frames, int* nFrames, int* sleepTime){
-
-	getLayoutData();
+    int index = 0;
+    int spatialHue = hue;
+    int hueStep = 15;
+    if (nFrameSlices % 2 != 0){
+        fillUpFramesArray(&frameSlices[nFrameSlices/2], frames, &index, spatialHue%360);
+        spatialHue += hueStep;
+    }
+    
+    for (int i = nFrameSlices/2 - 1; i >= 0; i--){
+        fillUpFramesArray(&frameSlices[i], frames, &index, spatialHue%360);
+        fillUpFramesArray(&frameSlices[nFrameSlices - 1 - i], frames, &index, spatialHue%360);
+        spatialHue += hueStep;
+    }
+    
+    hue += 30;
+    if (hue > 360){
+        hue = 0;
+    }
+    
+    *nFrames = index;
+    //in a non-music effect, the sleeptime is determined by the plugin itself.
+    //Important that this variable is set correctly by the plugin.
+    *sleepTime = transTime;
 }
 
 /**
